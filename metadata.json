@@ -1,0 +1,6 @@
+{
+  "name": "GentleArrow307",
+  "description": "Private, local-first AI workspace with accounts, shared conversations, model selection, attachments, and knowledge libraries.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
