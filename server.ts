@@ -629,64 +629,105 @@ app.delete('/api/v1/auth/account', optionalAuthenticate, (req, res) => {
 // 3. Models Allow-List & Metadata
 app.get('/api/v1/models', (req, res) => {
   const hasGeminiKey = !!process.env.GEMINI_API_KEY;
+  const localGatewayUrl = process.env.LOCAL_MODEL_GATEWAY_URL || process.env.GATEWAY_BASE_URL;
+  const configuredModels = (process.env.AI_AVAILABLE_MODELS || 'gemini-3.8-flash,gemini-3.1-flash-lite,llama3.3,llama3.2,qwen2.5,codellama')
+    .split(',')
+    .map(m => m.trim())
+    .filter(Boolean);
 
-  const models = [
-    {
-      id: 'gemini-3.8-flash',
+  const modelMetadataMap: Record<string, any> = {
+    'gemini-3.8-flash': {
       name: 'Gemini 3.8 Flash',
       provider: 'gemini',
       description: 'Flagship high-speed multimodal reasoning model. Recommended for conversations, analysis, code, and vision.',
       contextWindow: 1048576,
       maxOutputTokens: 8192,
-      capabilities: {
-        text: true,
-        vision: true,
-        streaming: true,
-        tools: true,
-      },
+      capabilities: { text: true, vision: true, streaming: true, tools: true },
       speed: 'Ultra Fast',
       status: hasGeminiKey ? 'available' : 'requires_key',
-      statusReason: hasGeminiKey ? 'Ready for production inference' : 'Configured via AI Studio Secrets (GEMINI_API_KEY)',
+      statusReason: hasGeminiKey ? 'Ready for production inference' : 'Requires GEMINI_API_KEY',
     },
-    {
-      id: 'gemini-3.1-flash-lite',
+    'gemini-3.1-flash-lite': {
       name: 'Gemini 3.1 Flash Lite',
       provider: 'gemini',
       description: 'Ultra-low latency model optimized for rapid classification, summarization, and lightweight chat.',
       contextWindow: 1048576,
       maxOutputTokens: 8192,
-      capabilities: {
-        text: true,
-        vision: false,
-        streaming: true,
-        tools: false,
-      },
+      capabilities: { text: true, vision: false, streaming: true, tools: false },
       speed: 'Ultra Fast',
       status: hasGeminiKey ? 'available' : 'requires_key',
-      statusReason: hasGeminiKey ? 'Ready for production inference' : 'Configured via AI Studio Secrets (GEMINI_API_KEY)',
+      statusReason: hasGeminiKey ? 'Ready for production inference' : 'Requires GEMINI_API_KEY',
     },
-    {
-      id: 'localai/qwen3-0.6b-vllm-cpp',
-      name: 'LocalAI Qwen3 0.6B (Self-Hosted Profile)',
+    'llama3.3': {
+      name: 'Llama 3.3 (Local Profile)',
       provider: 'localai',
-      description: 'Local CPU-based inference model from GentleArrow307 Docker Compose stack.',
-      contextWindow: 32768,
-      maxOutputTokens: 2048,
-      capabilities: {
-        text: true,
-        vision: false,
-        streaming: true,
-        tools: false,
-      },
-      speed: 'Standard',
-      status: 'offline_local',
-      statusReason: 'Requires self-hosted LocalAI container on dedicated hardware (2GB RAM min). Switch to Gemini in cloud sandbox.',
+      description: 'High-capability open weights model from your GentleArrow307 local model configuration.',
+      contextWindow: 131072,
+      maxOutputTokens: 4096,
+      capabilities: { text: true, vision: false, streaming: true, tools: false },
+      speed: 'Fast',
+      status: localGatewayUrl ? 'available' : 'offline_local',
+      statusReason: localGatewayUrl ? 'Connected to local model gateway' : 'Requires self-hosted Ollama or LocalAI gateway (LOCAL_MODEL_GATEWAY_URL)',
     },
-  ];
+    'llama3.2': {
+      name: 'Llama 3.2 (Local Profile)',
+      provider: 'localai',
+      description: 'Lightweight efficient local model for private on-device execution.',
+      contextWindow: 131072,
+      maxOutputTokens: 4096,
+      capabilities: { text: true, vision: false, streaming: true, tools: false },
+      speed: 'Fast',
+      status: localGatewayUrl ? 'available' : 'offline_local',
+      statusReason: localGatewayUrl ? 'Connected to local model gateway' : 'Requires self-hosted Ollama or LocalAI gateway (LOCAL_MODEL_GATEWAY_URL)',
+    },
+    'qwen2.5': {
+      name: 'Qwen 2.5 (Local Profile)',
+      provider: 'localai',
+      description: 'Multilingual and coding-optimized open weights model profile.',
+      contextWindow: 65536,
+      maxOutputTokens: 4096,
+      capabilities: { text: true, vision: false, streaming: true, tools: false },
+      speed: 'Fast',
+      status: localGatewayUrl ? 'available' : 'offline_local',
+      statusReason: localGatewayUrl ? 'Connected to local model gateway' : 'Requires self-hosted Ollama or LocalAI gateway (LOCAL_MODEL_GATEWAY_URL)',
+    },
+    'codellama': {
+      name: 'Code Llama (Local Profile)',
+      provider: 'localai',
+      description: 'Specialized code generation and refactoring model.',
+      contextWindow: 16384,
+      maxOutputTokens: 4096,
+      capabilities: { text: true, vision: false, streaming: true, tools: false },
+      speed: 'Standard',
+      status: localGatewayUrl ? 'available' : 'offline_local',
+      statusReason: localGatewayUrl ? 'Connected to local model gateway' : 'Requires self-hosted Ollama or LocalAI gateway (LOCAL_MODEL_GATEWAY_URL)',
+    },
+  };
+
+  const models = configuredModels.map(id => {
+    if (modelMetadataMap[id]) {
+      return { id, ...modelMetadataMap[id] };
+    }
+    const isLocal = !id.startsWith('gemini');
+    return {
+      id,
+      name: id.toUpperCase(),
+      provider: isLocal ? 'localai' : 'gemini',
+      description: `Configured via AI_AVAILABLE_MODELS (${id}).`,
+      contextWindow: 32768,
+      maxOutputTokens: 4096,
+      capabilities: { text: true, vision: false, streaming: true, tools: false },
+      speed: 'Standard',
+      status: isLocal ? (localGatewayUrl ? 'available' : 'offline_local') : (hasGeminiKey ? 'available' : 'requires_key'),
+      statusReason: isLocal ? (localGatewayUrl ? 'Connected to gateway' : 'Requires local gateway') : 'Cloud provider',
+    };
+  });
+
+  const defaultModel = process.env.AI_DEFAULT_MODEL || (hasGeminiKey ? 'gemini-3.8-flash' : configuredModels[0]);
 
   res.json({
     models,
-    defaultModel: 'gemini-3.8-flash',
+    defaultModel,
   });
 });
 
@@ -1166,10 +1207,13 @@ app.post('/api/v1/ai/chat', optionalAuthenticate, async (req, res) => {
   }
 
   // Handle local model honest error if selected
-  const chosenModel = model || conv.model || 'gemini-3.8-flash';
-  if (chosenModel.startsWith('localai/')) {
+  const localGatewayUrl = process.env.LOCAL_MODEL_GATEWAY_URL || process.env.GATEWAY_BASE_URL;
+  const chosenModel = model || conv.model || process.env.AI_DEFAULT_MODEL || 'gemini-3.8-flash';
+  const isLocalModel = !chosenModel.startsWith('gemini');
+
+  if (isLocalModel && !localGatewayUrl) {
     return res.status(503).json({
-      error: 'The LocalAI self-hosted model profile requires dedicated local hardware (2GB RAM min). Please select Gemini 3.8 Flash in the model dropdown to run in this environment.',
+      error: `Model "${chosenModel}" is configured in AI_AVAILABLE_MODELS for local self-hosting. In this cloud preview, please select Gemini 3.8 Flash from the model picker, or set LOCAL_MODEL_GATEWAY_URL to connect a self-hosted Ollama or LocalAI gateway.`,
     });
   }
 
